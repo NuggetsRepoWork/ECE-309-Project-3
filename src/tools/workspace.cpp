@@ -6,11 +6,51 @@
 // workspace_provided.cpp.
 
 #include "tools/workspace.h"
-
+#include <string>
 namespace fs = std::filesystem;
 
-bool Workspace::resolve(std::string_view /*user_path*/, fs::path* /*out*/,
-                        std::string* reason) const {
-    *reason = "Workspace::resolve not implemented yet";   // TODO
-    return false;
+bool Workspace::resolve(std::string_view user_path, fs::path* out,
+    std::string* reason) const {
+    reason->clear();
+
+    if (user_path.empty()) {
+        *reason = "empty path";
+        return false;
+    }
+    if (user_path.find('\0') != std::string_view::npos) {
+        *reason = "path contains a NUL byte";
+        return false;
+    }
+
+    try {
+        const fs::path p{ std::string(user_path) };
+        if (p.is_absolute() || p.has_root_path()) {
+            *reason = "absolute paths are not allowed";
+            return false;
+        }
+
+        const fs::path normalized = p.lexically_normal();
+        const auto first = normalized.begin();
+        if (first != normalized.end() && *first == fs::path("..")) {
+            *reason = "path escapes the workspace";
+            return false;
+        }
+
+        if (normalized == fs::path(".")) {
+            *out = root();
+        }
+        else {
+            *out = root() / normalized;
+        }
+        return true;
+    }
+    catch (const std::exception&) {
+        *reason = "invalid path";
+        return false;
+    }
+    catch (...) {
+        *reason = "invalid path";
+        return false;
+    }
 }
+
